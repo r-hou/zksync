@@ -10,9 +10,15 @@ from web3.exceptions import TransactionNotFound
 from web3.middleware import async_geth_poa_middleware
 
 from config import RPC, ERC20_ABI, ZKSYNC_TOKENS
-from settings import GAS_MULTIPLIER
+from settings import GAS_MULTIPLIER, USE_PAYMASTER
 from utils.sleeping import sleep
 
+
+from zksync2.transaction.transaction_builders import TxFunctionCall
+from zksync2.manage_contracts.paymaster_utils import PaymasterFlowEncoder
+from zksync2.module.module_builder import ZkSyncBuilder
+from zksync2.core.types import EthBlockParams, PaymasterParams
+from zksync2.signer.eth_signer import PrivateKeyEthSigner
 
 class Account:
     def __init__(self, account_id: int, private_key: str, chain: str, proxy: Union[None, str]) -> None:
@@ -34,6 +40,11 @@ class Account:
         )
         self.account = EthereumAccount.from_key(private_key)
         self.address = self.account.address
+
+        # if USE_PAYMASTER:
+        #     allowance = await self.check_allowance(ZKSYNC_TOKENS["USDC"], "0xf2A173643cA958213714712Ce195f6f6e9C686E7")
+        #     if allowance < 100*1e6:
+        #         asyncio.get_event_loop().run_until_complete(self.approve(1000_000_000, ZKSYNC_TOKENS["USDC"]))
 
     async def get_tx_data(self, value: int = 0):
         tx = {
@@ -151,17 +162,69 @@ class Account:
                     return False
                 await asyncio.sleep(1)
 
+    async def to_tx712(self, transaction):
+
+        self.zk_w3 = ZkSyncBuilder.build(random.choice(RPC[self.chain]["rpc"]))
+        signer = PrivateKeyEthSigner(self.account, transaction["chainId"])
+        paymaster_params = PaymasterParams(
+            **{
+                "paymaster": "0xf2A173643cA958213714712Ce195f6f6e9C686E7",
+                "paymaster_input": self.w3.to_bytes(
+                    hexstr=PaymasterFlowEncoder(self.zk_w3).encode_approval_based(
+                        ZKSYNC_TOKENS["USDC"], 2 ** 256 - 1,
+                        self.w3.to_bytes(hexstr="0x0000000000000000000000000000000000000000000000000000000000000001")
+                    )
+                ),
+            }
+        )
+        # print(paymaster_params.paymaster_input.hex())
+
+        token_address = self.w3.to_checksum_address(ZKSYNC_TOKENS["USDC"])
+        contract = self.w3.eth.contract(address=token_address, abi=ERC20_ABI)
+        usdc_amount = await contract.functions.balanceOf(self.address).call()
+        print("USDC amount:", usdc_amount/1e6)
+
+
+        tx_func_call = TxFunctionCall(
+            chain_id=transaction["chainId"],
+            nonce=transaction["nonce"],
+            from_=transaction["from"],
+            to=transaction["to"],
+            data=transaction["data"],
+            value=transaction["value"],
+            gas_limit=transaction["gas"],  # Unknown at this state, estimation is done in next step
+            gas_price=transaction["gasPrice"],
+            max_priority_fee_per_gas=100_000_000,
+            paymaster_params=paymaster_params,
+        )
+        estimate_gas = self.zk_w3.zksync.eth_estimate_gas(tx_func_call.tx)
+        tx_712 = tx_func_call.tx712(estimate_gas)
+        signed_message = signer.sign_typed_data(tx_712.to_eip712_struct())
+        msg = tx_712.encode(signed_message)
+        return msg
+
     async def sign(self, transaction):
         gas = await self.w3.eth.estimate_gas(transaction)
         gas = int(gas * GAS_MULTIPLIER)
 
         transaction.update({"gas": gas})
+        # print(transaction)
+        # exit(0)
 
+        if USE_PAYMASTER:
+            transaction = await self.to_tx712(transaction)
+            return transaction
         signed_txn = self.w3.eth.account.sign_transaction(transaction, self.private_key)
 
         return signed_txn
 
     async def send_raw_transaction(self, signed_txn):
-        txn_hash = await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        # txn_hash = await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        if USE_PAYMASTER:
+            txn_hash = self.zk_w3.zksync.send_raw_transaction(signed_txn)
+        else:
+            txn_hash = await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
 
         return txn_hash
+
+

@@ -6,9 +6,11 @@
 
 ---
 
-🔔 <b>Subscribe to me:</b> https://t.me/sybilwave
+This is a fork of https://github.com/czbag/zksync. Additionally, I add the paymaster function. Now you can use paymaster(only support USDC) for any transaction by simplly switching on the USE_PAYMASTER in settings.py, but you have to make sure you have USDC asset in your account.
 
-🤑 <b>Donate me:</b> 0x00000b0ddce0bfda4531542ad1f2f5fad7b9cde9
+这是 https://github.com/czbag/zksync 的一个分支。此外，我添加了 paymaster 功能。现在，您可以通过在 settings.py 中简单地开启 USE_PAYMASTER 来使用 paymaster（仅支持 USDC）进行任何交易，但您必须确保您的账户中有 USDC 资产。
+
+🤑 <b>Donate me:</b> 0xE3754298f3258165ea32B81977A09d64832223FB
 
 ---
 <h2>🚀 Installation</h2>
