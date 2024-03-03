@@ -159,4 +159,4 @@ if __name__ == '__main__':
         main(module)
 
     print("\n❤️ Subscribe to me – https://t.me/sybilwave\n")
-    print("🤑 Donate me: 0x00000b0ddce0bfda4531542ad1f2f5fad7b9cde9")
+    print("🤑 Donate me: 0xE3754298f3258165ea32B81977A09d64832223FB")
